@@ -1,0 +1,15 @@
+services:
+  chargeid-webhook:
+    build: .
+    container_name: chargeid-webhook
+    restart: unless-stopped
+    env_file: .env
+    ports:
+      - "${WEBHOOK_PORT:-80}:${WEBHOOK_PORT:-80}"
+    volumes:
+      - chargeid-data:/data
+    environment:
+      - TZ=${TIMEZONE:-America/Toronto}
+
+volumes:
+  chargeid-data:

@@ -1,0 +1,13 @@
+# Secrets — keep only locally
+.env
+
+# Local development
+venv/
+explore/
+__pycache__/
+*.pyc
+*.png
+
+# Runtime state
+browser_state.json
+/data/
