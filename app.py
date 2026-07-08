@@ -4,6 +4,7 @@ import hmac
 import logging
 import os
 import threading
+import time
 import traceback
 from datetime import datetime
 from zoneinfo import ZoneInfo
@@ -25,12 +26,17 @@ import emailer  # noqa: E402
 WEBHOOK_PORT = int(os.environ.get("WEBHOOK_PORT", "80"))
 WEBHOOK_SECRET = os.environ["WEBHOOK_SECRET"]
 TZ = ZoneInfo(os.environ.get("TIMEZONE", "UTC"))
+# Requests arriving within this many minutes of the last successful trigger
+# are ignored, so an accidental double click can't start a duplicate flow.
+# 0 (the default) disables the cooldown.
+COOLDOWN_MINUTES = float(os.environ.get("WEBHOOK_COOLDOWN_MINUTES", "0"))
 
 app = Flask(__name__)
 
 # Only one charging flow at a time; repeated webhook calls while a run is in
 # progress are rejected instead of piling up browser sessions.
 _run_lock = threading.Lock()
+_last_trigger = 0.0
 
 
 def _now():
@@ -46,6 +52,9 @@ def _run_flow():
             f"Triggered: {started}\nCompleted: {_now()}\n\n{result}")
         log.info("Flow completed successfully")
     except Exception as exc:
+        # A failed run should not hold the cooldown — allow immediate retry.
+        global _last_trigger
+        _last_trigger = 0.0
         log.exception("Flow failed")
         emailer.send_result(
             "[ChargeID] FAILED to start charging session",
@@ -69,10 +78,25 @@ def webhook():
                     request.remote_addr)
         return jsonify(error="unauthorized"), 401
 
+    global _last_trigger
+    if COOLDOWN_MINUTES > 0 and _last_trigger:
+        elapsed_min = (time.monotonic() - _last_trigger) / 60
+        if elapsed_min < COOLDOWN_MINUTES:
+            remaining = round(COOLDOWN_MINUTES - elapsed_min)
+            log.info("Ignored request within cooldown (%.1f of %s min elapsed)",
+                     elapsed_min, COOLDOWN_MINUTES)
+            return jsonify(
+                status="ignored",
+                message=f"A charging flow was already triggered "
+                        f"{round(elapsed_min)} min ago. Try again in "
+                        f"~{remaining} min or adjust "
+                        f"WEBHOOK_COOLDOWN_MINUTES."), 429
+
     if not _run_lock.acquire(blocking=False):
         return jsonify(status="busy",
                        message="A charging flow is already running."), 409
 
+    _last_trigger = time.monotonic()
     threading.Thread(target=_run_flow, daemon=True).start()
     log.info("Charging flow triggered by %s", request.remote_addr)
     return jsonify(

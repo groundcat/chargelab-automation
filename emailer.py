@@ -61,6 +61,8 @@ def wait_for_code(baseline_ids, timeout=180, poll_interval=5):
 
     Only messages that arrived after `baseline_ids` was captured are
     considered, so stale codes from previous runs are never reused.
+    Once a code is parsed, the email is deleted so verification-code
+    messages don't pile up in the inbox.
     """
     deadline = time.time() + timeout
     while time.time() < deadline:
@@ -76,6 +78,13 @@ def wait_for_code(baseline_ids, timeout=180, poll_interval=5):
                     if match:
                         log.info("Found code in email from %s (subject: %s)",
                                  msg.get("From"), msg.get("Subject"))
+                        try:
+                            m.store(mid, "+FLAGS", "\\Deleted")
+                            m.expunge()
+                            log.info("Deleted verification code email")
+                        except Exception:
+                            log.warning("Could not delete code email",
+                                        exc_info=True)
                         return match.group(1)
             finally:
                 m.logout()

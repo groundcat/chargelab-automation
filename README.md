@@ -9,7 +9,9 @@ secret it:
    the inbox over IMAP for the one-time verification code (5–6 digits, parsed
    from the email body regardless of wording), and submits it
 3. Clicks **Start session** and waits for the session to begin (the site
-   gives ~90 s to plug in; the session URL gains `?sessionId=...` once active)
+   gives ~90 s to plug in; the session URL gains `?sessionId=...` once active).
+   The parsed verification email is deleted from the inbox afterwards so
+   code emails don't accumulate.
 4. Emails the outcome (success, already charging, already complete, or
    failure with page content and traceback) to the user via SMTP
 
@@ -34,7 +36,7 @@ valid indefinitely with regular use.
 
 | Endpoint | Description |
 |---|---|
-| `GET /webhook?secret=...` (also `GET /?secret=...`) | Trigger the charging flow. Returns `202` immediately; the result arrives by email. `401` on bad secret, `409` if a run is already in progress. |
+| `GET /webhook?secret=...` (also `GET /?secret=...`) | Trigger the charging flow. Returns `202` immediately; the result arrives by email. `401` on bad secret, `409` if a run is already in progress, `429` if within the configured cooldown window. |
 | `GET /health` | Liveness check. |
 
 ## Charger states handled
@@ -51,6 +53,10 @@ valid indefinitely with regular use.
 All settings come from `.env` (see the file in this repo):
 
 - `WEBHOOK_PORT`, `WEBHOOK_SECRET`
+- `WEBHOOK_COOLDOWN_MINUTES` (optional, default 0 = off) — repeat requests
+  within this many minutes of the last successful trigger are ignored with a
+  `429`, protecting against accidental double clicks. A failed run resets the
+  cooldown so you can retry immediately.
 - `CHARGEID_BASE_URL`, `CHARGEID_CHARGER_ID`, `CHARGEID_LOGIN_EMAIL`
 - `LOGIN_EMAIL_HOST`, `LOGIN_EMAIL_USERNAME`, `LOGIN_EMAIL`,
   `LOGIN_EMAIL_PASSWORD`, `LOGIN_EMAIL_SECURE_IMAP_PORT` (993),

@@ -17,6 +17,11 @@ LOGIN_EMAIL = os.environ["CHARGEID_LOGIN_EMAIL"]
 
 STATE_PATH = os.environ.get("BROWSER_STATE_PATH", "/data/browser_state.json")
 
+# Headless Chromium advertises itself as "HeadlessChrome/...", which sites
+# can flag as a bot. Present a regular Chrome UA instead.
+USER_AGENT = ("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
+              "(KHTML, like Gecko) Chrome/149.0.0.0 Safari/537.36")
+
 
 class ChargeError(Exception):
     pass
@@ -81,7 +86,7 @@ def start_charging_session():
     """
     with sync_playwright() as p:
         browser = p.chromium.launch(headless=True)
-        context_args = {}
+        context_args = {"user_agent": USER_AGENT}
         if os.path.exists(STATE_PATH):
             context_args["storage_state"] = STATE_PATH
             log.info("Loaded saved login state from %s", STATE_PATH)
