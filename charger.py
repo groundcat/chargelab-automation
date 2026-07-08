@@ -22,6 +22,15 @@ class ChargeError(Exception):
     pass
 
 
+def _save_state(context):
+    """Persist cookies/localStorage so future runs can skip the login."""
+    try:
+        os.makedirs(os.path.dirname(STATE_PATH), exist_ok=True)
+        context.storage_state(path=STATE_PATH)
+    except Exception:
+        log.warning("Could not persist browser state", exc_info=True)
+
+
 def _page_text(page, limit=1500):
     try:
         return page.evaluate("() => document.body.innerText").strip()[:limit]
@@ -75,6 +84,7 @@ def start_charging_session():
         context_args = {}
         if os.path.exists(STATE_PATH):
             context_args["storage_state"] = STATE_PATH
+            log.info("Loaded saved login state from %s", STATE_PATH)
         context = browser.new_context(**context_args)
         page = context.new_page()
         try:
@@ -84,16 +94,18 @@ def start_charging_session():
 
             # A saved session may still be valid; log in only if needed.
             if page.get_by_role("button", name="Log in").count():
+                log.info("No valid saved session, performing email-code login")
                 _login(page)
-                try:
-                    os.makedirs(os.path.dirname(STATE_PATH), exist_ok=True)
-                    context.storage_state(path=STATE_PATH)
-                except Exception:
-                    log.warning("Could not persist browser state", exc_info=True)
                 # Login can land on an old session summary; reload the
                 # charger page to get a clean state.
                 page.goto(CHARGER_URL, wait_until="domcontentloaded", timeout=60000)
                 page.wait_for_timeout(5000)
+            else:
+                log.info("Already logged in, reusing saved session")
+            # Save state on every run (not just after a fresh login):
+            # Cognito refreshes tokens silently, and persisting the
+            # refreshed ones keeps the saved session valid indefinitely.
+            _save_state(context)
 
             body = _page_text(page)
 

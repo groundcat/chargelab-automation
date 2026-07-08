@@ -13,8 +13,22 @@ secret it:
 4. Emails the outcome (success, already charging, already complete, or
    failure with page content and traceback) to the user via SMTP
 
-The Cognito login tokens are persisted to `/data/browser_state.json`, so
-subsequent runs usually skip the email-code login entirely.
+## Login session reuse
+
+The email-code login is only performed when necessary. After each run the
+browser's login state (AWS Cognito tokens in cookies/localStorage) is saved
+to `BROWSER_STATE_PATH` (default `/data/browser_state.json`, kept on a Docker
+volume so it survives container restarts). Every run loads that state first
+and checks whether the site still shows a **Log in** button:
+
+- **Still logged in** → the whole email round-trip is skipped and the flow
+  takes only a few seconds.
+- **Session expired / first run** → the full email-code login runs once, and
+  the fresh state is saved for next time.
+
+The state is re-saved after every run — including login-skipped ones — so
+silently refreshed Cognito tokens are captured and the saved session stays
+valid indefinitely with regular use.
 
 ## Endpoints
 
@@ -42,6 +56,8 @@ All settings come from `.env` (see the file in this repo):
   `LOGIN_EMAIL_PASSWORD`, `LOGIN_EMAIL_SECURE_IMAP_PORT` (993),
   `LOGIN_EMAIL_SECURE_SMTP_PORT` (587)
 - `TIMEZONE` (used for timestamps in result emails)
+- `BROWSER_STATE_PATH` (optional, default `/data/browser_state.json`) — where
+  the reusable login session is stored
 
 ## Deploy (VPS)
 
